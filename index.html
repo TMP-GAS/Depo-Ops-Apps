@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0B1020">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <title>Depo Operational Apps</title>
+  <style>
+    html,body{margin:0;height:100%;background:#0B1020}
+    iframe{border:0;width:100%;height:100%;display:block}
+    .off{display:none;color:#ECE8DD;font:500 15px system-ui;padding:40px;text-align:center}
+  </style>
+</head>
+<body>
+  <!-- GANTI dengan URL Web App Anda (berakhiran /exec) -->
+  <iframe id="f" src="https://script.google.com/macros/s/AKfycbwjGFeXzFD7dmQUmemjAu5UqzIDoOZhWx4fHmfYIeKUqsZJ2ES07IYJKw3ZZz_En1TlmQ/exec" title="Depo Operational Apps" allow="clipboard-write"></iframe>
+  <div class="off" id="off">Anda sedang offline. Sambungkan internet untuk memuat data D.O.A.</div>
+  <script>
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function(){});
+    function sync(){ var o = !navigator.onLine; document.getElementById('f').style.display = o ? 'none' : 'block'; document.getElementById('off').style.display = o ? 'block' : 'none'; }
+    addEventListener('online', sync); addEventListener('offline', sync); sync();
+  </script>
+</body>
+</html>
