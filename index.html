@@ -1,26 +1,92 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="id">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0B1020">
-  <link rel="manifest" href="manifest.json">
-  <link rel="apple-touch-icon" href="icon-192.png">
-  <title>D.O.A</title>
-  <style>
-    html,body{margin:0;height:100%;background:#0B1020}
-    iframe{border:0;width:100%;height:100%;display:block}
-    .off{display:none;color:#ECE8DD;font:500 15px system-ui;padding:40px;text-align:center}
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b5ed7">
+<title>D.O.A</title>
+<!-- Pertahankan <link rel="manifest"> dan pendaftaran service worker milik PWA Anda yang sudah ada. -->
+<style>
+  html,body{margin:0;height:100%;background:#0b5ed7;font-family:system-ui,sans-serif}
+  #app{position:fixed;inset:0;width:100%;height:100%;border:0;background:#fff}
+  #gate{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;color:#fff;z-index:5}
+  #gate button{font-size:17px;padding:14px 22px;border:0;border-radius:12px;background:#fff;color:#0b5ed7;font-weight:700}
+  #gate small{opacity:.9;max-width:340px}
+  .hidden{display:none!important}
+</style>
 </head>
 <body>
-  <!-- GANTI dengan URL Web App Anda (berakhiran /exec) -->
-  <iframe id="f" src="https://script.google.com/macros/s/AKfycbwjGFeXzFD7dmQUmemjAu5UqzIDoOZhWx4fHmfYIeKUqsZJ2ES07IYJKw3ZZz_En1TlmQ/exec" title="Depo Operational Apps" allow="clipboard-write"></iframe>
-  <div class="off" id="off">Anda sedang offline. Sambungkan internet untuk memuat data D.O.A.</div>
-  <script>
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function(){});
-    function sync(){ var o = !navigator.onLine; document.getElementById('f').style.display = o ? 'none' : 'block'; document.getElementById('off').style.display = o ? 'block' : 'none'; }
-    addEventListener('online', sync); addEventListener('offline', sync); sync();
-  </script>
+
+<div id="gate">
+  <h2 style="margin:0">Depo Stock Management</h2>
+  <small id="gmsg">Aplikasi memerlukan izin <b>Lokasi</b> dan <b>Kamera</b> untuk foto serah terima. Ketuk tombol di bawah, lalu pilih <b>Izinkan</b>.</small>
+  <button id="gbtn">Mulai &amp; beri izin</button>
+  <button id="gskip" style="background:transparent;color:#fff;font-weight:400;font-size:14px;text-decoration:underline">Lewati dulu</button>
+</div>
+
+<!-- allow= wajib: tanpa ini iframe lintas-origin (Google Apps Script) otomatis diblokir dari kamera & lokasi -->
+<iframe id="app" class="hidden" title="Depo App"
+  allow="camera *; microphone *; geolocation *; fullscreen *; clipboard-write *; autoplay *"
+  allowfullscreen></iframe>
+
+<script>
+/* ===== GANTI dengan URL Web App (Deploy › Web app › URL berakhiran /exec) ===== */
+var EXEC_URL = 'https://script.google.com/macros/s/AKfycbwjGFeXzFD7dmQUmemjAu5UqzIDoOZhWx4fHmfYIeKUqsZJ2ES07IYJKw3ZZz_En1TlmQ/exec';
+/* =============================================================================== */
+
+var frame = document.getElementById('app'), gate = document.getElementById('gate');
+function openApp(){ if(!frame.src || frame.src==='about:blank') frame.src = EXEC_URL; frame.classList.remove('hidden'); gate.classList.add('hidden'); }
+
+/* Lokasi paling akurat (berhenti bila ≤20 m atau 12 detik) — dijalankan di halaman induk yang izinnya sudah diberikan */
+function bestGeo(){
+  return new Promise(function(res, rej){
+    if(!navigator.geolocation) return rej(new Error('Perangkat tidak mendukung GPS.'));
+    var best=null, done=false, wid=null, tm=null;
+    function stop(){ done=true; try{ if(wid!=null) navigator.geolocation.clearWatch(wid) }catch(e){} clearTimeout(tm) }
+    function fin(){ if(done) return; stop(); best ? res(best) : rej(new Error('Lokasi tidak tersedia. Aktifkan GPS.')) }
+    wid = navigator.geolocation.watchPosition(function(p){
+      var c=p.coords; if(!best || c.accuracy<best.acc) best={lat:c.latitude, lng:c.longitude, acc:c.accuracy};
+      if(c.accuracy<=20) fin();
+    }, function(e){ if(done) return; if(e.code===1){ stop(); rej(new Error('Izin lokasi di PWA ditolak. Buka Info Aplikasi › Izin › Lokasi › Izinkan.')) } },
+    {enableHighAccuracy:true, timeout:15000, maximumAge:0});
+    tm = setTimeout(fin, 12000);
+  });
+}
+
+/* Jembatan: web app (di dalam iframe) meminta lokasi / membuka browser lewat postMessage */
+window.addEventListener('message', function(e){
+  var d = e.data; if(!d || d.depoBridge !== 1 || !e.source) return;
+  function reply(o){ o.depoBridge = 2; o.id = d.id; try{ e.source.postMessage(o, '*') }catch(x){} }
+  if(d.type === 'geo'){
+    bestGeo().then(function(g){ reply({ok:true, lat:g.lat, lng:g.lng, acc:g.acc}) })
+             .catch(function(err){ reply({ok:false, error:err.message}) });
+  } else if(d.type === 'open'){
+    window.open(EXEC_URL, '_blank', 'noopener'); reply({ok:true});
+  }
+});
+
+/* Minta izin sekali di awal (butuh ketukan pengguna) — izin tersimpan untuk PWA ini */
+async function askPerms(){
+  var msg = document.getElementById('gmsg'), bad = [];
+  try{ await bestGeo() }catch(e){ bad.push('Lokasi') }
+  try{
+    if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+      var s = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}, audio:false});
+      s.getTracks().forEach(function(t){ t.stop() });
+    }
+  }catch(e){ bad.push('Kamera') }
+  try{ localStorage.setItem('depoPermAsked','1') }catch(e){}
+  if(bad.length){
+    msg.innerHTML = '⚠️ Izin <b>'+bad.join(' & ')+'</b> belum diberikan. Buka <b>Pengaturan HP › Aplikasi › (nama PWA) › Izin</b>, izinkan Kamera &amp; Lokasi, lalu buka ulang. Anda tetap bisa melanjutkan; foto memakai kamera bawaan HP bila perlu.';
+    document.getElementById('gbtn').textContent = 'Lanjut buka aplikasi';
+    document.getElementById('gbtn').onclick = openApp;
+  } else openApp();
+}
+document.getElementById('gbtn').onclick = askPerms;
+document.getElementById('gskip').onclick = openApp;
+
+/* Sudah pernah diminta? langsung buka aplikasi */
+try{ if(localStorage.getItem('depoPermAsked')==='1') openApp(); }catch(e){}
+</script>
 </body>
 </html>
